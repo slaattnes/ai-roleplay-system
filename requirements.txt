@@ -1,0 +1,19 @@
+# Core dependencies for AI Roleplay System
+google-cloud-texttospeech>=2.14.1
+google-generativeai>=0.3.1
+python-dotenv>=1.0.0
+pydantic>=2.3.0
+pyaudio>=0.2.13
+toml>=0.10.2
+pydub>=0.25.1
+
+# RAG and document processing dependencies
+chromadb>=0.4.0
+pypdf>=3.0.0
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+python-docx>=0.8.11
+numpy>=1.24.0
+
+# Additional utilities
+pathlib2>=2.3.7
