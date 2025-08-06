@@ -94,8 +94,34 @@ class RagEnhancedAgent:
         Returns:
             Formatted string with retrieved knowledge
         """
-        # Skip knowledge retrieval for now to speed up responses
-        return "No additional knowledge needed for this discussion."
+        try:
+            # Build search query from topic and recent context
+            search_query = topic
+            if context:
+                # Add the last few context items to improve retrieval
+                recent_context = " ".join(context[-2:])  # Last 2 exchanges
+                search_query = f"{topic} {recent_context}"
+            
+            # Retrieve relevant knowledge
+            logger.debug(f"Searching knowledge base for: {search_query[:100]}...")
+            results = await self.knowledge_base.query(search_query, n_results=3)
+            
+            if not results:
+                logger.debug("No relevant knowledge found")
+                return "No additional knowledge found in the knowledge base."
+            
+            # Format retrieved knowledge
+            knowledge_text = "Retrieved knowledge:\n"
+            for i, result in enumerate(results, 1):
+                text = result['text'][:300]  # Truncate to avoid token limits
+                knowledge_text += f"{i}. {text}...\n"
+            
+            logger.debug(f"Retrieved {len(results)} knowledge items for {self.name}")
+            return knowledge_text
+            
+        except Exception as e:
+            logger.warning(f"Knowledge retrieval failed: {e}")
+            return "Knowledge retrieval unavailable."
     
     def _build_system_instruction(self) -> str:
         """Build system instruction for the LLM."""
@@ -125,13 +151,17 @@ class RagEnhancedAgent:
         """
         prompt = f"Topic: {topic}\n\n"
         
+        # Add retrieved knowledge
+        if knowledge and "No additional knowledge" not in knowledge:
+            prompt += f"{knowledge}\n"
+        
         # Add conversation context if provided (keep minimal)
         if context and len(context) > 0:
             recent_context = context[-2:]  # Only last 2 exchanges
             context_text = "\n".join(recent_context)
             prompt += f"Recent conversation:\n{context_text}\n\n"
         
-        prompt += "Give a brief response (2-3 sentences) from your perspective."
+        prompt += "Based on the available knowledge and conversation context, give a brief response (2-3 sentences) from your perspective as a specialist in your field."
         
         return prompt
     

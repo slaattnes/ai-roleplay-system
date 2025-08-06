@@ -30,15 +30,16 @@ async def main():
         docs_path = Path(main_config["knowledge"]["document_path"])
         docs_path.mkdir(parents=True, exist_ok=True)
         
-        if not any(docs_path.iterdir()) if docs_path.exists() else False:
-            print(f"Notice: No documents found in {docs_path}.")
-            print("Please add PDF, EPUB, or TXT files to this directory.")
-            print("Continuing without knowledge ingestion...\n")
-        else:
-            print("Documents found. Skipping knowledge ingestion for now to avoid system issues.")
-            print("The agents will operate without RAG-enhanced knowledge.\n")
-            # TODO: Implement batched/chunked document processing to avoid crashes
-            # await manager.ingest_knowledge()
+        # Check if knowledge base has data and use it as is
+        try:
+            kb_has_data = await manager.check_knowledge_base()
+            if kb_has_data:
+                print("✅ Knowledge base contains data. Using existing knowledge.\n")
+            else:
+                print("⚠️ Knowledge base is empty. Agents will operate without RAG enhancement.\n")
+        except Exception as e:
+            print(f"Error checking knowledge base: {e}")
+            print("Continuing without RAG enhancement...\n")
         
         # Get topic and number of turns from command line or use defaults
         topic = sys.argv[1] if len(sys.argv) > 1 else "the nature of consciousness and AI"

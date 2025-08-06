@@ -60,16 +60,80 @@ class RagMultiAgentManager:
         self.audio_player.cleanup()
         logger.info("RAG multi-agent manager stopped")
     
-    async def ingest_knowledge(self) -> None:
-        """Ingest knowledge from the document directory."""
+    async def check_knowledge_base(self) -> bool:
+        """
+        Check if the knowledge base already contains data.
+        
+        Returns:
+            True if knowledge base has data, False otherwise
+        """
         try:
-            print("Ingesting knowledge documents...")
-            count = await self.knowledge_base.ingest_directory()
-            print(f"Successfully ingested {count} documents into the knowledge base.")
+            # Try a simple query to see if there's any data
+            results = await self.knowledge_base.query("test", n_results=1)
+            return len(results) > 0
+        except Exception as e:
+            logger.warning(f"Could not check knowledge base: {e}")
+            return False
+    
+    async def ingest_knowledge_lightweight(self) -> bool:
+        """
+        Lightweight knowledge ingestion - processes only small files to avoid crashes.
+        
+        Returns:
+            True if ingestion successful, False otherwise
+        """
+        try:
+            logger.info("Starting lightweight knowledge ingestion...")
+            
+            main_config = load_config("main")
+            docs_path = Path(main_config["knowledge"]["document_path"])
+            
+            # Only process small text files and PDFs under 100KB
+            processed_count = 0
+            for file_path in docs_path.rglob("*"):
+                if file_path.is_file():
+                    file_size = file_path.stat().st_size
+                    
+                    # Skip large files to avoid memory issues
+                    if file_size > 100_000:  # 100KB limit
+                        logger.info(f"Skipping large file: {file_path.name} ({file_size} bytes)")
+                        continue
+                    
+                    # Process only text files and small PDFs
+                    if file_path.suffix.lower() in ['.txt', '.md']:
+                        try:
+                            logger.info(f"Processing small file: {file_path.name}")
+                            
+                            # Read and process the file
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            # Add to knowledge base
+                            doc_id = f"lightweight_{file_path.stem}"
+                            metadata = {
+                                "source": str(file_path),
+                                "type": "text",
+                                "size": len(content)
+                            }
+                            
+                            await self.knowledge_base.add_document(content, doc_id, metadata)
+                            processed_count += 1
+                            logger.info(f"Added lightweight document: {file_path.name}")
+                            
+                            # Limit to 3 documents to avoid overload
+                            if processed_count >= 3:
+                                break
+                                
+                        except Exception as e:
+                            logger.warning(f"Failed to process {file_path.name}: {e}")
+                            continue
+            
+            logger.info(f"Lightweight knowledge ingestion completed. Processed {processed_count} documents.")
+            return processed_count > 0
             
         except Exception as e:
-            logger.error(f"Error ingesting knowledge: {str(e)}")
-            print(f"Error: {str(e)}")
+            logger.error(f"Lightweight knowledge ingestion failed: {e}")
+            return False
     
     async def run_conversation(self, topic: str, turns: int = 3) -> None:
         """Run a knowledge-enhanced conversation between agents."""
