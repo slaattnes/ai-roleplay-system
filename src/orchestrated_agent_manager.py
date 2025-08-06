@@ -42,7 +42,14 @@ class OrchestratedAgent:
         self.audio_channel = config["audio_channel"]
         
         # Determine if this is the moderator
-        self.is_moderator = agent_id == "moderator"
+        agent_name = config.get("name", "").lower()
+        agent_role = config.get("role", "").lower()
+        self.is_moderator = (
+            agent_id == "agent5" or
+            agent_id == "moderator" or
+            "organ" in agent_name or
+            agent_role == "moderator"
+        )
         
         # Shared components
         self.orchestrator = orchestrator
@@ -96,13 +103,46 @@ class OrchestratedAgent:
             )
             
             # Synthesize speech
-            audio_data, sample_rate = await self.tts_client.synthesize_speech(
-                text=ssml_response,
-                voice_name=self.voice_name,
-                speaking_rate=self.speaking_rate,
-                pitch=self.pitch,
-                use_ssml=True
-            )
+            # Check if this is a Chirp HD voice that doesn't support SSML
+            if "Chirp3-HD" in self.voice_name:
+                logger.info(f"Chirp HD voice detected ({self.voice_name}), using plain text directly")
+                # Extract plain text from SSML and use it directly
+                plain_text = self._extract_plain_text(ssml_response)
+                audio_data, sample_rate = await self.tts_client.synthesize_speech(
+                    text=plain_text,
+                    voice_name=self.voice_name,
+                    speaking_rate=self.speaking_rate,
+                    pitch=self.pitch,
+                    sample_rate_hertz=48000,
+                    use_ssml=False
+                )
+            else:
+                # Try SSML first for non-Chirp voices
+                try:
+                    audio_data, sample_rate = await self.tts_client.synthesize_speech(
+                        text=ssml_response,
+                        voice_name=self.voice_name,
+                        speaking_rate=self.speaking_rate,
+                        pitch=self.pitch,
+                        sample_rate_hertz=48000,
+                        use_ssml=True
+                    )
+                except Exception as e:
+                    if "does not support SSML" in str(e):
+                        logger.info(f"SSML not supported for {self.voice_name}, falling back to plain text")
+                        logger.info(f"Using speaking rate: {self.speaking_rate} for fallback")
+                        # Fallback to plain text by extracting text from SSML
+                        plain_text_fallback = self._extract_plain_text(ssml_response)
+                        audio_data, sample_rate = await self.tts_client.synthesize_speech(
+                            text=plain_text_fallback,
+                            voice_name=self.voice_name,
+                            speaking_rate=self.speaking_rate,
+                            pitch=self.pitch,
+                            sample_rate_hertz=48000,
+                            use_ssml=False
+                        )
+                    else:
+                        raise e
             
             # Return the audio data for playback by the manager
             self.is_speaking = False
@@ -159,17 +199,14 @@ class OrchestratedAgent:
         
         Your responses should be in character and reflect your expertise and persona.
         
-        IMPORTANT: Format your response with SSML tags to make your speech more natural.
-        Use <break>, <prosody>, and other SSML tags to add pauses, emphasis, and intonation.
+        IMPORTANT: Format your response with ONLY SIMPLE SSML tags to make your speech more natural.
+        Use ONLY <break time="300ms"/> for pauses and <emphasis> for emphasis.
+        DO NOT use prosody, pitch, or other complex tags as they aren't supported in this voice.
         
         EXAMPLE SSML FORMATTING:
         <speak>
-          <prosody rate="medium">
-            This is an important point. <break time="300ms"/> Let me elaborate.
-          </prosody>
-          <prosody rate="medium">
-            I'm particularly interested in this aspect!
-          </prosody>
+          Welcome to the discussion. <break time="300ms"/> Today we'll explore an important topic.
+          <emphasis>This is a key point</emphasis> that I want to highlight.
         </speak>
         """
         
@@ -188,7 +225,7 @@ class OrchestratedAgent:
         if event_type == "welcome" or event_type == "opening_remarks":
             base_instruction += """
             This is the opening of the session. Introduce the topic and set the tone.
-            Keep your remarks concise but engaging.
+            As the moderator, welcome everyone to the discussion and briefly introduce the topic.
             """
         elif event_type == "closing_remarks":
             base_instruction += """
@@ -271,14 +308,8 @@ class OrchestratedAgent:
         # But first, escape any XML/HTML that might be in the text
         text = response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
-        # Add basic SSML structure - remove pitch for Chirp HD voices
-        return f"""
-        <speak>
-            <prosody rate="{self.speaking_rate}">
-                {text}
-            </prosody>
-        </speak>
-        """
+        # Add basic SSML structure - very simple for maximum compatibility
+        return f"<speak>{text}</speak>"
     
     def _extract_plain_text(self, ssml: str) -> str:
         """Extract plain text from SSML."""

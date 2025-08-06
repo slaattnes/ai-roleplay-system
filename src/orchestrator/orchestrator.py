@@ -60,8 +60,26 @@ class Orchestrator:
             # Load agent IDs from config
             self.agent_ids = list(self.agents_config.keys())
             
-            # Identify the moderator (first agent in the list for now)
-            self.moderator_id = self.agent_ids[0] if self.agent_ids else None
+            # Find the moderator (specifically looking for agent5, organ_3, moderator, or role)
+            self.moderator_id = None
+            for agent_id, config in self.agents_config.items():
+                # Check for specific agent ID, name patterns, or role
+                agent_name = config.get("name", "").lower()
+                agent_role = config.get("role", "").lower()
+                
+                if (agent_id == "agent5" or 
+                    agent_id == "organ_3" or 
+                    agent_id == "moderator" or 
+                    "organ" in agent_name or
+                    agent_role == "moderator"):
+                    self.moderator_id = agent_id
+                    break
+            
+            # If no specific moderator found, default to first agent
+            if not self.moderator_id and self.agent_ids:
+                self.moderator_id = self.agent_ids[0]
+                
+            logger.info(f"Identified moderator: {self.moderator_id}")
             
             # Start the scheduler
             await self.scheduler.start()
@@ -92,6 +110,11 @@ class Orchestrator:
         Returns:
             Agent ID of the next speaker or None
         """
+        # For the first speaker, always choose the moderator
+        if not self.state.transcripts:  # No transcripts yet means first speaker
+            logger.info(f"First speaker - selecting moderator: {self.moderator_id}")
+            return self.moderator_id
+            
         # If there are pending speak requests, honor the oldest one
         if self.speak_requests:
             request = self.speak_requests.pop(0)
@@ -107,10 +130,6 @@ class Orchestrator:
             available_agents = [aid for aid in self.agent_ids if aid != self.current_speaker]
             
             if available_agents:
-                # Start with the moderator and then rotate through others
-                if self.current_speaker is None and self.moderator_id:
-                    return self.moderator_id
-                
                 # Find the index of the current speaker
                 try:
                     current_idx = self.agent_ids.index(self.current_speaker)
