@@ -113,6 +113,10 @@ class RagMultiAgentManager:
         try:
             self.speaking = True
             
+            # Debug logging for agent identity
+            logger.info(f"_speak called for agent: {agent.name} (ID: {agent.agent_id})")
+            logger.info(f"Agent {agent.name} - position: {getattr(agent, 'position', 'None')}, audio_channel: {getattr(agent, 'audio_channel', 'None')}")
+            
             # Convert to speech
             audio_data, sample_rate = await self.tts_client.synthesize_speech(
                 text=ssml_text,
@@ -124,10 +128,12 @@ class RagMultiAgentManager:
             
             # Play to the appropriate channel
             if hasattr(agent, 'position') and agent.position:
+                logger.info(f"Playing {agent.name} to position: {agent.position}")
                 await self.audio_player.play_to_position(
                     audio_data, agent.position, sample_rate
                 )
             else:
+                logger.info(f"Playing {agent.name} to channel: {agent.audio_channel}")
                 await self.audio_player.play_to_channel(
                     audio_data, agent.audio_channel, sample_rate
                 )

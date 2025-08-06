@@ -94,23 +94,38 @@ class MultiChannelPlayer:
         audio_bytes = audio_buffer.tobytes()
         self.stream.write(audio_bytes)
         
-        logger.debug(f"Played audio on channel {target_channel} of {self.channels} channels")
+        logger.info(f"Played audio on channel {target_channel} of {self.channels} channels")
     
-    def play_to_position(self, audio_data: np.ndarray, position: str, sample_rate: int):
-        """Play audio data to a specific position (compatibility method)."""
-        # Map position to channel based on standard surround sound layout
+    def play_to_position_sync(self, audio_data: np.ndarray, position: str, sample_rate: int):
+        """Play audio data to a specific position (synchronous method)."""
+        # Map position to channel based on ASUS Xonar U5 actual tested layout
         position_to_channel = {
-            "front-left": 0,
-            "front-right": 1, 
-            "center": 2,
-            "lfe": 3,
-            "rear-left": 4,
-            "rear-right": 5
+            "front-left": 0,      # Confirmed: Channel 0 -> Front-left
+            "front-right": 1,     # Confirmed: Channel 1 -> Front-right  
+            "center": 2,          # No center speaker, map to rear-left
+            "rear-left": 2,       # Confirmed: Channel 2 -> Rear-left
+            "rear-right": 3,      # Confirmed: Channel 3 -> Rear-right
+            "lfe": 5,            # Confirmed: Channel 5 -> LFE/Subwoofer
+            "subwoofer": 5,      # Same as LFE
         }
         
         channel = position_to_channel.get(position.lower(), 0)
-        logger.debug(f"Playing audio to position '{position}' on channel {channel}")
+        logger.info(f"Playing audio to position '{position}' mapped to channel {channel}")
         self.play_on_channel(audio_data, sample_rate, channel)
+    
+    async def play_to_channel(self, audio_data: np.ndarray, channel: int, sample_rate: int):
+        """Async wrapper for play_on_channel."""
+        def _play():
+            self.play_on_channel(audio_data, sample_rate, channel)
+        
+        await asyncio.get_event_loop().run_in_executor(None, _play)
+    
+    async def play_to_position(self, audio_data: np.ndarray, position: str, sample_rate: int):
+        """Async wrapper for play_to_position."""
+        def _play():
+            self.play_to_position_sync(audio_data, position, sample_rate)
+        
+        await asyncio.get_event_loop().run_in_executor(None, _play)
     
     def cleanup(self):
         """Clean up audio resources."""

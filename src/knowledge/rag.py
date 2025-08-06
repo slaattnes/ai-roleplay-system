@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import chromadb
 from chromadb.utils import embedding_functions
+import google.generativeai as genai
 
 from src.knowledge.document_processor import DocumentProcessor
 from src.utils.config import load_config, get_env_var
@@ -13,6 +14,33 @@ from src.utils.logging import setup_logger
 
 # Set up module logger
 logger = setup_logger("rag")
+
+
+class GoogleEmbeddingFunction:
+    """Custom embedding function using Google's Generative AI API."""
+    
+    def __init__(self, api_key: str, model_name: str = "models/embedding-001"):
+        """Initialize with Google API key."""
+        genai.configure(api_key=api_key)
+        self.model_name = model_name
+        logger.info(f"Initialized Google embedding function with model: {model_name}")
+    
+    def __call__(self, input_texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for input texts."""
+        embeddings = []
+        for text in input_texts:
+            try:
+                result = genai.embed_content(
+                    model=self.model_name,
+                    content=text,
+                    task_type="retrieval_document"
+                )
+                embeddings.append(result["embedding"])
+            except Exception as e:
+                logger.error(f"Error generating embedding for text: {e}")
+                # Fallback to zero vector if API fails
+                embeddings.append([0.0] * 768)  # Standard embedding dimension
+        return embeddings
 
 
 class KnowledgeBase:
@@ -37,8 +65,10 @@ class KnowledgeBase:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(path=str(self.vector_db_path))
         
-        # Use default embedding function (lightweight and fast)
-        self.embedding_function = embedding_functions.DefaultEmbeddingFunction()
+        # Use Google's embedding API (server-side, no local ML models)
+        self.embedding_function = GoogleEmbeddingFunction(
+            api_key=get_env_var("GOOGLE_API_KEY")
+        )
         
         # Get or create collection
         try:

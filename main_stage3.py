@@ -35,8 +35,10 @@ async def main():
             print("Please add PDF, EPUB, or TXT files to this directory.")
             print("Continuing without knowledge ingestion...\n")
         else:
-            # Ingest knowledge
-            await manager.ingest_knowledge()
+            print("Documents found. Skipping knowledge ingestion for now to avoid system issues.")
+            print("The agents will operate without RAG-enhanced knowledge.\n")
+            # TODO: Implement batched/chunked document processing to avoid crashes
+            # await manager.ingest_knowledge()
         
         # Get topic and number of turns from command line or use defaults
         topic = sys.argv[1] if len(sys.argv) > 1 else "the nature of consciousness and AI"
