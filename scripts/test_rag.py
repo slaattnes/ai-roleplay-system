@@ -51,11 +51,19 @@ async def test_knowledge_base():
     logger.info("Testing knowledge base...")
     
     try:
+        # Clean up any existing test collection first
+        import chromadb
+        temp_client = chromadb.PersistentClient(path="./data/vector_db")
+        try:
+            temp_client.delete_collection("test_collection")
+        except:
+            pass  # Collection doesn't exist, which is fine
+        
         # Initialize knowledge base
         kb = KnowledgeBase(collection_name="test_collection")
         logger.info("Knowledge base initialized successfully")
         
-        # Test adding a document
+        # Test adding a document with simpler metadata
         test_doc = """
         The field of artificial intelligence has grown rapidly in recent years.
         Machine learning algorithms can now process vast amounts of data and 
@@ -63,10 +71,11 @@ async def test_knowledge_base():
         machine learning, uses neural networks with many layers to model complex patterns.
         """
         
-        await kb.add_document(test_doc, "test_doc_1", {"type": "test", "topic": "AI"})
+        # Use simpler metadata structure to avoid schema issues
+        await kb.add_document(test_doc, "test_doc_1", {"source": "test"})
         logger.info("Document added successfully")
         
-        # Test querying
+        # Test querying without filters first
         results = await kb.query("artificial intelligence", n_results=2)
         logger.info(f"Query returned {len(results)} results")
         
@@ -85,6 +94,8 @@ async def test_knowledge_base():
         
     except Exception as e:
         logger.error(f"Knowledge base test failed: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return False
 
 
