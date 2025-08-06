@@ -117,25 +117,34 @@ class RagMultiAgentManager:
             logger.info(f"_speak called for agent: {agent.name} (ID: {agent.agent_id})")
             logger.info(f"Agent {agent.name} - position: {getattr(agent, 'position', 'None')}, audio_channel: {getattr(agent, 'audio_channel', 'None')}")
             
+            # Check if this agent uses a Chirp 3 HD voice (they don't support SSML)
+            is_chirp3_hd = 'Chirp3-HD' in agent.voice_name
+            
             # Convert to speech
             audio_data, sample_rate = await self.tts_client.synthesize_speech(
                 text=ssml_text,
                 voice_name=agent.voice_name,
                 speaking_rate=agent.speaking_rate,
                 pitch=agent.pitch,
-                use_ssml=True
+                use_ssml=not is_chirp3_hd  # Use SSML only for non-Chirp3-HD voices
             )
             
-            # Play to the appropriate channel
+            # Play to the appropriate channel with audio effects if configured
+            effects_config = getattr(agent, 'audio_effects', {})
+            
             if hasattr(agent, 'position') and agent.position:
                 logger.info(f"Playing {agent.name} to position: {agent.position}")
+                if effects_config:
+                    logger.info(f"Applying audio effects to {agent.name}: {list(effects_config.keys())}")
                 await self.audio_player.play_to_position(
-                    audio_data, agent.position, sample_rate
+                    audio_data, agent.position, sample_rate, effects_config
                 )
             else:
                 logger.info(f"Playing {agent.name} to channel: {agent.audio_channel}")
+                if effects_config:
+                    logger.info(f"Applying audio effects to {agent.name}: {list(effects_config.keys())}")
                 await self.audio_player.play_to_channel(
-                    audio_data, agent.audio_channel, sample_rate
+                    audio_data, agent.audio_channel, sample_rate, effects_config
                 )
             
             self.speaking = False

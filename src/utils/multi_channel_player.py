@@ -3,10 +3,11 @@
 import asyncio
 import pyaudio
 import numpy as np
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 
 from src.utils.logging import setup_logger
 from src.utils.config import load_config
+from src.utils.audio_effects import AudioEffects
 
 logger = setup_logger("multi_channel_player")
 
@@ -17,6 +18,7 @@ class MultiChannelPlayer:
         """Initialize the multi-channel audio player."""
         self.main_config = load_config("main")
         self.py_audio = pyaudio.PyAudio()
+        self.audio_effects = AudioEffects()  # Initialize audio effects processor
         
         # Handle device configuration
         device_setting = self.main_config["audio"]["device_index"]
@@ -74,21 +76,45 @@ class MultiChannelPlayer:
         self.cleanup()
         logger.info("Multi-channel player stopped")
     
-    def play_on_channel(self, audio_data: np.ndarray, sample_rate: int, channel: int):
-        """Play audio data on a specific channel."""
+    def apply_audio_effects(
+        self, 
+        audio_data: np.ndarray, 
+        sample_rate: int, 
+        effects_config: Optional[Dict[str, Any]] = None
+    ) -> np.ndarray:
+        """
+        Apply audio effects to the audio data if effects are configured.
+        
+        Args:
+            audio_data: Input audio data
+            sample_rate: Sample rate in Hz
+            effects_config: Optional effects configuration dictionary
+            
+        Returns:
+            Processed audio data
+        """
+        if effects_config and len(effects_config) > 0:
+            return self.audio_effects.apply_effects(audio_data, sample_rate, effects_config)
+        return audio_data
+    
+    def play_on_channel(self, audio_data: np.ndarray, sample_rate: int, channel: int, effects_config: Optional[Dict[str, Any]] = None):
+        """Play audio data on a specific channel with optional effects."""
         if self.stream is None:
             logger.error("Audio stream not initialized")
             return
         
+        # Apply audio effects if configured
+        processed_audio = self.apply_audio_effects(audio_data, sample_rate, effects_config)
+        
         # Create multi-channel audio buffer
-        audio_buffer = np.zeros((len(audio_data), self.channels), dtype=np.int16)
+        audio_buffer = np.zeros((len(processed_audio), self.channels), dtype=np.int16)
         
         # Place audio on specified channel (with bounds checking)
         target_channel = min(channel, self.channels - 1)
         if channel >= self.channels:
             logger.warning(f"Requested channel {channel} not available, using channel {target_channel}")
         
-        audio_buffer[:, target_channel] = audio_data
+        audio_buffer[:, target_channel] = processed_audio
         
         # Convert to bytes and play
         audio_bytes = audio_buffer.tobytes()
@@ -96,8 +122,8 @@ class MultiChannelPlayer:
         
         logger.info(f"Played audio on channel {target_channel} of {self.channels} channels")
     
-    def play_to_position_sync(self, audio_data: np.ndarray, position: str, sample_rate: int):
-        """Play audio data to a specific position (synchronous method)."""
+    def play_to_position_sync(self, audio_data: np.ndarray, position: str, sample_rate: int, effects_config: Optional[Dict[str, Any]] = None):
+        """Play audio data to a specific position (synchronous method) with optional effects."""
         # Map position to channel based on ASUS Xonar U5 actual tested layout
         position_to_channel = {
             "front-left": 0,      # Confirmed: Channel 0 -> Front-left
@@ -111,19 +137,19 @@ class MultiChannelPlayer:
         
         channel = position_to_channel.get(position.lower(), 0)
         logger.info(f"Playing audio to position '{position}' mapped to channel {channel}")
-        self.play_on_channel(audio_data, sample_rate, channel)
+        self.play_on_channel(audio_data, sample_rate, channel, effects_config)
     
-    async def play_to_channel(self, audio_data: np.ndarray, channel: int, sample_rate: int):
+    async def play_to_channel(self, audio_data: np.ndarray, channel: int, sample_rate: int, effects_config: Optional[Dict[str, Any]] = None):
         """Async wrapper for play_on_channel."""
         def _play():
-            self.play_on_channel(audio_data, sample_rate, channel)
+            self.play_on_channel(audio_data, sample_rate, channel, effects_config)
         
         await asyncio.get_event_loop().run_in_executor(None, _play)
     
-    async def play_to_position(self, audio_data: np.ndarray, position: str, sample_rate: int):
-        """Async wrapper for play_to_position."""
+    async def play_to_position(self, audio_data: np.ndarray, position: str, sample_rate: int, effects_config: Optional[Dict[str, Any]] = None):
+        """Async wrapper for play_to_position with optional effects."""
         def _play():
-            self.play_to_position_sync(audio_data, position, sample_rate)
+            self.play_to_position_sync(audio_data, position, sample_rate, effects_config)
         
         await asyncio.get_event_loop().run_in_executor(None, _play)
     

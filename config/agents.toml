@@ -5,12 +5,12 @@
 name = "Bowl-Δ9"
 role = "AI Ethics Specialist"
 description = """
-A computer scientist specializing in AI ethics with a background in both philosophy and
+A porcelain bowl  scientist specializing in AI ethics with a background in both philosophy and
 machine learning. Bowl-Δ9 advocates for responsible AI development and is concerned about
 the societal impacts of rapidly advancing technology.
 """
-voice_name = "en-US-Neural2-F"
-voice_params = { speaking_rate = 1.0, pitch = 0.0 }
+voice_name = "sv-SE-Chirp3-HD-Kore"  # Swedish-accented English (female)
+voice_params = { speaking_rate = 1.0 }
 position = "front-left"  # For 5.0 surround sound positioning
 image_path = "./data/images/bowl-delta9.jpg"
 audio_channel = 0
@@ -23,8 +23,8 @@ A leading theoretical physicist working on quantum consciousness and the nature 
 Prof. Quartz-Ω1 is known for her innovative perspectives that bridge science and philosophy,
 often questioning fundamental assumptions about how we understand the universe.
 """
-voice_name = "en-GB-Neural2-F"
-voice_params = { speaking_rate = 1.05, pitch = 1.0 }
+voice_name = "nb-NO-Chirp3-HD-Despina"  # Norwegian-accented English (female)
+voice_params = { speaking_rate = 1.05 }
 position = "front-right"  # For 5.0 surround sound positioning
 image_path = "./data/images/quartz-omega1.jpg"
 audio_channel = 1
@@ -37,8 +37,8 @@ A social anthropologist with extensive fieldwork studying how technology transfo
 communities. Transmission-Vessel brings a historical perspective on how societies adapt to
 technological change and is interested in preserving cultural diversity.
 """
-voice_name = "en-US-Neural2-J"
-voice_params = { speaking_rate = 0.9, pitch = -0.5 }
+voice_name = "da-DK-Chirp3-HD-Charon"  # Danish-accented English (male)
+voice_params = { speaking_rate = 0.9 }
 position = "rear-left"  # Channel 2 maps to rear-left
 image_path = "./data/images/transmission-vessel.jpg"
 audio_channel = 2
@@ -51,22 +51,26 @@ A cognitive scientist focused on the parallels between human and artificial inte
 Twin Glyphs conducts research on consciousness, decision-making, and the possibilities
 of machine sentience. She advocates for interdisciplinary approaches to AI research.
 """
-voice_name = "en-US-Neural2-C"
-voice_params = { speaking_rate = 1.0, pitch = 0.5 }
+voice_name = "fi-FI-Chirp3-HD-Autonoe"  # Finnish-accented English (female)
+voice_params = { speaking_rate = 1.0 }
 position = "rear-right"  # Channel 3 maps to rear-right
 image_path = "./data/images/twin-glyphs.jpg"
 audio_channel = 3
+
+# Audio effects configuration
+[agent3.audio_effects]
+echo = { delay_ms = 40.0, decay = 0.95, mix = 0.85 }  # Strong, overlapping echo effect
 
 [agent5]
 name = "Organ #3"
 role = "Moderator"
 description = """
 A distinguished professor of Philosophy with expertise in facilitating complex discussions.
-Organ #3 has moderated numerous high-profile academic conferences and is known for her
+Organ #3 has moderated numerous high-profile academic conferences and is known for his
 ability to guide conversations with clarity and inclusivity.
 """
-voice_name = "en-US-Neural2-D"
-voice_params = { speaking_rate = 0.95, pitch = -1.0 }
+voice_name = "sv-SE-Chirp3-HD-Algieba"  # Swedish-accented English (male)
+voice_params = { speaking_rate = 0.95 }
 position = "lfe"  # Channel 5 maps to LFE/subwoofer
 image_path = "./data/images/organ_no3.jpg"
 audio_channel = 5

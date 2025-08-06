@@ -31,7 +31,10 @@ class RagEnhancedAgent:
         self.description = config["description"]
         self.voice_name = config["voice_name"]
         self.speaking_rate = config["voice_params"]["speaking_rate"]
-        self.pitch = config["voice_params"]["pitch"]
+        self.pitch = config["voice_params"].get("pitch", 0.0)  # Default to 0.0 if not specified
+        
+        # Load audio effects configuration if present
+        self.audio_effects = config.get("audio_effects", {})
         self.position = config["position"]
         self.audio_channel = config["audio_channel"]
         
@@ -66,8 +69,15 @@ class RagEnhancedAgent:
             system_instruction=system_instruction
         )
         
-        # Process response to ensure proper SSML
-        return self._process_response_for_ssml(response)
+        # Check if this agent uses a Chirp 3 HD voice (they don't support SSML)
+        is_chirp3_hd = 'Chirp3-HD' in self.voice_name
+        
+        if is_chirp3_hd:
+            # Return plain text for Chirp 3 HD voices
+            return response.strip()
+        else:
+            # Process response to ensure proper SSML for legacy voices
+            return self._process_response_for_ssml(response)
     
     async def _retrieve_knowledge(
         self, 
@@ -84,53 +94,16 @@ class RagEnhancedAgent:
         Returns:
             Formatted string with retrieved knowledge
         """
-        # Combine topic and context for a better query
-        query = topic
-        if context and len(context) > 0:
-            # Extract the most recent context entries
-            recent_context = context[-3:]
-            query = f"{topic} {' '.join(recent_context)}"
-        
-        # Query the knowledge base
-        results = await self.knowledge_base.query(query, n_results=3)
-        
-        if not results:
-            return "No specific knowledge retrieved."
-        
-        # Format the results
-        knowledge_text = "Retrieved knowledge:\n\n"
-        for i, result in enumerate(results):
-            source = result["metadata"].get("title", "Unknown source")
-            knowledge_text += f"[Source {i+1}: {source}]\n{result['text']}\n\n"
-        
-        return knowledge_text
+        # Skip knowledge retrieval for now to speed up responses
+        return "No additional knowledge needed for this discussion."
     
     def _build_system_instruction(self) -> str:
         """Build system instruction for the LLM."""
         return f"""
-        You are {self.name}, a {self.role}. 
-        {self.description}
+        You are {self.name}, a {self.role}. {self.description}
         
-        Your responses should be in character and reflect your expertise and persona.
-        
-        When responding, incorporate the provided knowledge naturally into your response.
-        Do not mention "According to the retrieved knowledge" or similar phrases.
-        Speak as if this knowledge is part of your own expertise.
-        
-        IMPORTANT: Format your response with SSML tags to make your speech more natural.
-        Use <break>, <prosody>, and other SSML tags to add pauses, emphasis, and intonation.
-        
-        EXAMPLE SSML FORMATTING:
-        <speak>
-          <prosody rate="medium" pitch="+0st">
-            This is an important point. <break time="300ms"/> Let me elaborate.
-          </prosody>
-          <prosody rate="medium" pitch="+2st">
-            I'm particularly interested in this aspect!
-          </prosody>
-        </speak>
-        
-        Keep your response concise, around 3-5 sentences.
+        Keep responses brief (2-3 sentences max) and in character.
+        No need for SSML formatting - speak naturally.
         """
     
     def _build_prompt(
@@ -150,46 +123,27 @@ class RagEnhancedAgent:
         Returns:
             Formatted prompt string
         """
-        prompt = f"As {self.name}, please respond to the topic: {topic}\n\n"
+        prompt = f"Topic: {topic}\n\n"
         
-        # Add knowledge
-        prompt += f"{knowledge}\n\n"
-        
-        # Add conversation context if provided
+        # Add conversation context if provided (keep minimal)
         if context and len(context) > 0:
-            context_text = "\n".join(context[-5:])  # Use most recent 5 entries
+            recent_context = context[-2:]  # Only last 2 exchanges
+            context_text = "\n".join(recent_context)
             prompt += f"Recent conversation:\n{context_text}\n\n"
         
-        # Add specific instructions
-        prompt += """
-        In your response:
-        1. Incorporate the retrieved knowledge naturally
-        2. Stay in character as your persona
-        3. React to what others have said in the conversation
-        4. Express your unique perspective on the topic
-        """
+        prompt += "Give a brief response (2-3 sentences) from your perspective."
         
         return prompt
     
     def _process_response_for_ssml(self, response: str) -> str:
         """Process LLM response to ensure proper SSML formatting."""
-        # Check if response already has <speak> tags
-        if "<speak>" in response and "</speak>" in response:
-            # Extract content between speak tags
-            match = re.search(r"<speak>(.*?)</speak>", response, re.DOTALL)
-            if match:
-                ssml_content = match.group(1).strip()
-                return f"<speak>{ssml_content}</speak>"
+        # Simplified SSML - just wrap in basic speak tags
+        # Remove any existing SSML first
+        import re
+        text = re.sub(r'<[^>]+>', '', response).strip()
         
-        # If no speak tags, wrap the whole response
-        # But first, escape any XML/HTML that might be in the text
-        text = response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Escape XML characters
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
-        # Add basic SSML structure
-        return f"""
-        <speak>
-            <prosody rate="{self.speaking_rate}" pitch="{self.pitch:+.1f}st">
-                {text}
-            </prosody>
-        </speak>
-        """
+        # Add simple SSML structure
+        return f"<speak>{text}</speak>"
