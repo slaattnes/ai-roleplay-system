@@ -37,11 +37,8 @@ class KnowledgeBase:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(path=str(self.vector_db_path))
         
-        # Use Google for embeddings
-        self.embedding_function = embedding_functions.GoogleGenerativeAIEmbeddingFunction(
-            api_key=get_env_var("GOOGLE_API_KEY"),
-            model_name="models/embedding-001"
-        )
+        # Use default embedding function (lightweight and fast)
+        self.embedding_function = embedding_functions.DefaultEmbeddingFunction()
         
         # Get or create collection
         try:

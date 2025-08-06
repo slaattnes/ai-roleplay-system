@@ -41,7 +41,7 @@ class RagMultiAgentManager:
     async def start(self) -> None:
         """Start the manager and initialize components."""
         # Start audio player
-        self.audio_player.start()
+        await self.audio_player.start()
         
         # Initialize agents
         for agent_id, config in self.agents_config.items():
