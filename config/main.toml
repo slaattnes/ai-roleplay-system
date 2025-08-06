@@ -5,6 +5,6 @@ log_level = "INFO"
 log_directory = "./logs"
 
 [audio]
-device_index = "default"
+device_index = "plughw:CARD=U5,DEV=0"  # Replace with your device's identifier
 sample_rate = 48000
 channels = 6

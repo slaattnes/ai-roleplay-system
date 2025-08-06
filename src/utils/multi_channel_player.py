@@ -1,0 +1,121 @@
+"""Multi-channel audio playback utility for surround sound."""
+
+import asyncio
+import pyaudio
+import numpy as np
+from typing import Optional, Union
+
+from src.utils.logging import setup_logger
+from src.utils.config import load_config
+
+logger = setup_logger("multi_channel_player")
+
+class MultiChannelPlayer:
+    """Audio player for multi-channel (surround sound) output."""
+    
+    def __init__(self):
+        """Initialize the multi-channel audio player."""
+        self.main_config = load_config("main")
+        self.py_audio = pyaudio.PyAudio()
+        
+        # Handle device configuration
+        device_setting = self.main_config["audio"]["device_index"]
+        if isinstance(device_setting, str):
+            if device_setting.lower() == "default":
+                self.device_index = None
+            else:
+                # For string device names like "plughw:CARD=U5,DEV=0", keep as string
+                # PyAudio will handle it properly
+                self.device_index = device_setting
+        else:
+            self.device_index = device_setting
+        
+        self.sample_rate = self.main_config["audio"]["sample_rate"]
+        self.channels = self.main_config["audio"]["channels"]
+        
+        # Try to initialize with requested channels, fallback if needed
+        self.stream = None
+        self._initialize_stream()
+        
+        logger.info(f"Initialized multi-channel player with {self.channels} channels on device {self.device_index}")
+    
+    def _initialize_stream(self):
+        """Initialize the audio stream with fallback for unsupported channel counts."""
+        try:
+            self.stream = self.py_audio.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.sample_rate,
+                output=True,
+                output_device_index=self.device_index if isinstance(self.device_index, int) else None
+            )
+        except OSError as e:
+            if "Invalid number of channels" in str(e):
+                logger.warning(f"Device doesn't support {self.channels} channels, falling back to stereo")
+                self.channels = 2  # Fallback to stereo
+                self.stream = self.py_audio.open(
+                    format=pyaudio.paInt16,
+                    channels=self.channels,
+                    rate=self.sample_rate,
+                    output=True,
+                    output_device_index=self.device_index if isinstance(self.device_index, int) else None
+                )
+            else:
+                logger.error(f"Error starting audio stream: {e}")
+                raise
+    
+    async def start(self):
+        """Start the audio player (async compatibility)."""
+        # Stream is already initialized in __init__, so this is just for API compatibility
+        logger.info("Multi-channel player started")
+    
+    async def stop(self):
+        """Stop the audio player (async compatibility)."""
+        self.cleanup()
+        logger.info("Multi-channel player stopped")
+    
+    def play_on_channel(self, audio_data: np.ndarray, sample_rate: int, channel: int):
+        """Play audio data on a specific channel."""
+        if self.stream is None:
+            logger.error("Audio stream not initialized")
+            return
+        
+        # Create multi-channel audio buffer
+        audio_buffer = np.zeros((len(audio_data), self.channels), dtype=np.int16)
+        
+        # Place audio on specified channel (with bounds checking)
+        target_channel = min(channel, self.channels - 1)
+        if channel >= self.channels:
+            logger.warning(f"Requested channel {channel} not available, using channel {target_channel}")
+        
+        audio_buffer[:, target_channel] = audio_data
+        
+        # Convert to bytes and play
+        audio_bytes = audio_buffer.tobytes()
+        self.stream.write(audio_bytes)
+        
+        logger.debug(f"Played audio on channel {target_channel} of {self.channels} channels")
+    
+    def play_to_position(self, audio_data: np.ndarray, position: str, sample_rate: int):
+        """Play audio data to a specific position (compatibility method)."""
+        # Map position to channel based on standard surround sound layout
+        position_to_channel = {
+            "front-left": 0,
+            "front-right": 1, 
+            "center": 2,
+            "lfe": 3,
+            "rear-left": 4,
+            "rear-right": 5
+        }
+        
+        channel = position_to_channel.get(position.lower(), 0)
+        logger.debug(f"Playing audio to position '{position}' on channel {channel}")
+        self.play_on_channel(audio_data, sample_rate, channel)
+    
+    def cleanup(self):
+        """Clean up audio resources."""
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+        self.py_audio.terminate()
+        logger.info("Audio player resources cleaned up")

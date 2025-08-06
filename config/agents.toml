@@ -7,4 +7,19 @@ Dr. Hayes has moderated numerous high-profile academic conferences and is known 
 ability to guide conversations with clarity and inclusivity.
 """
 voice_name = "en-US-Neural2-F"
-voice_params = { speaking_rate = 1.0, pitch = 0.0, output_channel = 0 }
+voice_params = { speaking_rate = 1.0, pitch = 0.0 }
+position = "front-left"
+audio_channel = 0
+
+[agent2]
+name = "Dr. Marcus Chen"
+role = "AI Ethics Specialist"
+description = """
+A computer scientist specializing in AI ethics with a background in both philosophy and
+machine learning. Dr. Chen advocates for responsible AI development and is concerned about
+the societal impacts of rapidly advancing technology.
+"""
+voice_name = "en-US-Neural2-D"
+voice_params = { speaking_rate = 0.95, pitch = -1.0 }
+position = "front-right"
+audio_channel = 1

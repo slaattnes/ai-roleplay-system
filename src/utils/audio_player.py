@@ -68,20 +68,32 @@ class AudioPlayer:
                 logger.info(f"Playing audio at {sample_rate}Hz with {playback_channels} channels.")
             
             # Open stream
-            stream = self.py_audio.open(
-                format=pyaudio.paInt16,
-                channels=playback_channels,
-                rate=sample_rate,
-                output=True,
-                output_device_index=self.device_index
-            )
+            try:
+                self.stream = self.py_audio.open(
+                    format=pyaudio.paInt16,
+                    channels=self.channels,
+                    rate=self.sample_rate,
+                    output=True,
+                    output_device_index=self.device_index
+                )
+            except OSError as e:
+                logger.error(f"Error starting audio stream: {e}")
+                logger.info("Falling back to stereo (2 channels)")
+                self.channels = 2  # Fallback to stereo
+                self.stream = self.py_audio.open(
+                    format=pyaudio.paInt16,
+                    channels=self.channels,
+                    rate=self.sample_rate,
+                    output=True,
+                    output_device_index=self.device_index
+                )
             
             # Write audio data
-            stream.write(playback_data.tobytes())
+            self.stream.write(playback_data.tobytes())
             
             # Close stream
-            stream.stop_stream()
-            stream.close()
+            self.stream.stop_stream()
+            self.stream.close()
             
             logger.debug(f"Played {len(audio_data)} audio samples")
             

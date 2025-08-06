@@ -1,0 +1,14 @@
+[device]
+# ASUS XONAR U5 configuration
+device_index = 5
+sample_rate = 48000
+channels = 6  # 5.1 surround sound
+format = "int16"
+
+[channel_mapping]
+# Maps agent positions to audio channels
+front_left = 0
+front_right = 1
+center = 3
+rear_left = 4
+rear_right = 5
