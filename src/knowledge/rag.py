@@ -25,10 +25,10 @@ class GoogleEmbeddingFunction:
         self.model_name = model_name
         logger.info(f"Initialized Google embedding function with model: {model_name}")
     
-    def __call__(self, input_texts: List[str]) -> List[List[float]]:
+    def __call__(self, input: List[str]) -> List[List[float]]:
         """Generate embeddings for input texts."""
         embeddings = []
-        for text in input_texts:
+        for text in input:
             try:
                 result = genai.embed_content(
                     model=self.model_name,

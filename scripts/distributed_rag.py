@@ -164,12 +164,13 @@ class DistributedRAGManager:
             logger.error(f"Failed to import RAG data: {e}")
             return False
     
-    async def build_on_gpu_system(self, document_directory: str) -> bool:
+    async def build_on_gpu_system(self, document_directory: str, overwrite: bool = False) -> bool:
         """
         Build vector database on a GPU-enabled system.
         
         Args:
             document_directory: Directory containing documents to process
+            overwrite: Whether to overwrite existing collection
             
         Returns:
             True if build successful, False otherwise
@@ -183,6 +184,19 @@ class DistributedRAGManager:
             documents = doc_processor.process_directory(document_directory)
             
             logger.info(f"Processed {len(documents)} documents")
+            
+            # If overwrite, clear existing collection first
+            if overwrite:
+                try:
+                    import chromadb
+                    client = chromadb.PersistentClient(path=str(self.vector_db_path))
+                    try:
+                        client.delete_collection("agent_knowledge")
+                        logger.info("Deleted existing collection")
+                    except Exception:
+                        pass  # Collection may not exist
+                except Exception as e:
+                    logger.warning(f"Could not clear existing collection: {e}")
             
             # Initialize knowledge base
             kb = KnowledgeBase(collection_name="agent_knowledge")
@@ -222,7 +236,7 @@ async def main():
     elif args.action == "import":
         success = await manager.import_rag_data(args.path, args.overwrite)
     elif args.action == "build":
-        success = await manager.build_on_gpu_system(args.path)
+        success = await manager.build_on_gpu_system(args.path, args.overwrite)
     
     if success:
         logger.info(f"Action '{args.action}' completed successfully!")
