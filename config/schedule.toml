@@ -1,0 +1,25 @@
+# Daily event schedule configuration
+
+[premiere_session]
+name = "Premiere Session"
+events = [
+    { type = "welcome", duration = 2, description = "Welcome & Conference Introduction" },
+    { type = "roundtable", duration = 3, description = "Inaugural Roundtable Discussion" },
+    { type = "recess", duration = 1, description = "Recess (Small Talk)" },
+    { type = "keynote", duration = 2, description = "Keynote Presentation" },
+    { type = "presentation", duration = 2, description = "Presentation" },
+    { type = "open_forum", duration = 3, description = "Open Discussion" },
+    { type = "closing_remarks", duration = 2, description = "Closing Remarks" }
+]
+
+# The standard_session can be kept for future use but isn't used in this simplified version
+[standard_session]
+name = "Standard Session"
+events = [
+    { type = "opening_remarks", duration = 2, description = "Opening Remarks & Topic Introduction" },
+    { type = "structured_discussion", duration = 5, description = "Session 1: Structured Discussion" },
+    { type = "recess", duration = 1, description = "Recess (Small Talk)" },
+    { type = "presentation", duration = 2, description = "Presentation" },
+    { type = "open_forum", duration = 5, description = "Session 2: Open Forum" },
+    { type = "closing_remarks", duration = 2, description = "Closing Remarks & Summary" }
+]
