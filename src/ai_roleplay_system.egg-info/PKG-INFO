@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: ai-roleplay-system
+Version: 0.1.0
+Summary: Multi-agent AI role-playing system
+Requires-Python: >=3.9
+Requires-Dist: google-cloud-texttospeech>=2.14.1
+Requires-Dist: google-generativeai>=0.3.1
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pydantic>=2.3.0
+Requires-Dist: pyaudio>=0.2.13
+Requires-Dist: toml>=0.10.2
+Requires-Dist: pydub>=0.25.1

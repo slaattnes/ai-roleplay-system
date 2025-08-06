@@ -1,0 +1,10 @@
+[system]
+name = "AI Agent Role-Playing System"
+version = "0.1.0"
+log_level = "INFO"
+log_directory = "./logs"
+
+[audio]
+device_index = "default"
+sample_rate = 48000
+channels = 6

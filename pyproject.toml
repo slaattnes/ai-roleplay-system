@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-roleplay-system"
+version = "0.1.0"
+description = "Multi-agent AI role-playing system"
+requires-python = ">=3.9"
+dependencies = [
+    "google-cloud-texttospeech>=2.14.1",
+    "google-generativeai>=0.3.1",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.3.0",
+    "pyaudio>=0.2.13",
+    "toml>=0.10.2",
+    "pydub>=0.25.1",
+]

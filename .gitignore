@@ -1,0 +1,37 @@
+# Python-specific ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Environment variables
+.env
+
+# Configuration and credentials
+config/credentials/
+config/*.json
+
+# Logs
+logs/
+*.log
+
+# Cache and temporary files
+*.tmp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
