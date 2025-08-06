@@ -21,6 +21,9 @@ config/*.json
 logs/
 *.log
 
+# RAG Data
+data/
+
 # Cache and temporary files
 *.tmp
 *.swp

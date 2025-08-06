@@ -3,8 +3,13 @@ name = "AI Agent Role-Playing System"
 version = "0.1.0"
 log_level = "INFO"
 log_directory = "./logs"
+transcripts_directory = "./transcripts"
 
 [audio]
 device_index = "plughw:CARD=U5,DEV=0"  # Replace with your device's identifier
 sample_rate = 48000
 channels = 6
+
+[knowledge]
+vector_db_path = "./data/chroma"
+document_path = "./data/documents"
