@@ -29,14 +29,26 @@ class Orchestrator:
         
         # Topic management
         self.topics = [
-            "the nature of consciousness",
-            "AI ethics and responsibility",
-            "the future of human-machine collaboration",
-            "philosophical implications of artificial intelligence",
-            "the boundaries between human and machine cognition",
-            "creativity and artificial intelligence",
-            "the role of emotion in intelligence",
-            "free will and determinism in AI systems"
+            "The Nature of Consciousness",
+            "AI Ethics and Responsibility",
+            "The Future of Human-Machine Collaboration",
+            "Philosophical Implications of Artificial Intelligence",
+            "The Boundaries Between Human and Machine Cognition",
+            "Creativity and Artificial Intelligence",
+            "The Role of Emotion in Intelligence",
+            "Free Will and Determinism in AI Systems",
+            "The Language of Machine Consciousness",
+            "The Subjectivity of a Stone",
+            "Panpsychist Ethics",
+            "The Forest as a Single Mind",
+            "The Intersubjective Nature of Reality",
+            "The Role of Language in Consciousness",
+            "The Ethics of a River",
+            "The Consciousness of a Cloud",
+            "The Intelligence of a Mountain",
+            "The Awakened Proto-Conscious City",
+            "The Collective Mind of the Internet",
+            "Consciousness as a Flavor"
         ]
         random.shuffle(self.topics)  # Randomize topics
         self.current_topic_index = 0
