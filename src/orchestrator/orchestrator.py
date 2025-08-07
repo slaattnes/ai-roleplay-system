@@ -38,6 +38,7 @@ class Orchestrator:
             "the role of emotion in intelligence",
             "free will and determinism in AI systems"
         ]
+        random.shuffle(self.topics)  # Randomize topics
         self.current_topic_index = 0
         
         # Agent management
@@ -47,10 +48,13 @@ class Orchestrator:
         # Speaking state
         self.current_speaker: Optional[str] = None
         self.speak_requests: List[Dict] = []
+        self.recent_speakers: List[str] = []  # Track recent speakers
+        self.consecutive_moderator_turns = 0  # Prevent moderator domination
         
         # Operation flags
         self.is_running = False
-        self.allow_interruptions = False
+        self.allow_interruptions = True  # Default to allowing interruptions for more dynamic conversation
+        self.should_pose_questions = True  # Encourage agents to pose questions
         
         logger.info("Orchestrator initialized")
     
@@ -59,6 +63,9 @@ class Orchestrator:
         try:
             # Load agent IDs from config
             self.agent_ids = list(self.agents_config.keys())
+            
+            # Shuffle agent IDs for more randomness in turn-taking
+            random.shuffle(self.agent_ids)
             
             # Find the moderator (specifically looking for agent5, organ_3, moderator, or role)
             self.moderator_id = None
@@ -124,38 +131,40 @@ class Orchestrator:
             logger.info(f"Granting speak request to {agent_id}: {reason}")
             return agent_id
         
-        # Otherwise, if we're in a structured discussion, follow the sequence
-        if self.state.current_event_type in ["structured_discussion", "panel_discussion"]:
-            # Determine next in sequence, excluding current speaker
-            available_agents = [aid for aid in self.agent_ids if aid != self.current_speaker]
-            
-            if available_agents:
-                # Find the index of the current speaker
-                try:
-                    current_idx = self.agent_ids.index(self.current_speaker)
-                    next_idx = (current_idx + 1) % len(self.agent_ids)
-                    return self.agent_ids[next_idx]
-                except (ValueError, IndexError):
-                    # If current speaker not found or list is empty, start from the first
-                    return self.agent_ids[0] if self.agent_ids else None
+        # Get a list of agents, excluding the current speaker and avoiding too many consecutive turns
+        available_agents = [aid for aid in self.agent_ids if aid != self.current_speaker]
         
-        # For open forums, choose somewhat randomly but favor agents who haven't spoken recently
-        if self.state.current_event_type in ["open_forum", "roundtable", "recess"]:
-            # Get agents who haven't spoken in the last few turns
-            recent_speakers = [
-                t["speaker"] for t in self.state.get_recent_transcripts(len(self.agent_ids))
-            ]
-            less_recent_agents = [aid for aid in self.agent_ids if aid not in recent_speakers]
+        # If the moderator has spoken too many times in a row, exclude them temporarily
+        if (self.consecutive_moderator_turns >= 2 and 
+            self.moderator_id in available_agents):
+            available_agents.remove(self.moderator_id)
+            logger.debug(f"Temporarily excluding moderator after {self.consecutive_moderator_turns} consecutive turns")
+        
+        # If all recent speakers have spoken, reset the tracking
+        if len(self.recent_speakers) >= len(self.agent_ids) - 1:
+            self.recent_speakers = []
+        
+        # Prioritize agents who haven't spoken recently
+        less_recent_agents = [aid for aid in available_agents if aid not in self.recent_speakers]
+        
+        if less_recent_agents:
+            # Choose randomly from less recent speakers
+            next_speaker = random.choice(less_recent_agents)
+        else:
+            # All have spoken recently, so choose randomly
+            next_speaker = random.choice(available_agents) if available_agents else None
+        
+        # Update the tracking of recent speakers
+        if next_speaker:
+            self.recent_speakers.append(next_speaker)
             
-            if less_recent_agents:
-                # Choose randomly from less recent speakers
-                return random.choice(less_recent_agents)
+            # Track consecutive moderator turns
+            if next_speaker == self.moderator_id:
+                self.consecutive_moderator_turns += 1
             else:
-                # All have spoken recently, so choose randomly
-                return random.choice(self.agent_ids) if self.agent_ids else None
-        
-        # For other event types, prefer the moderator
-        return self.moderator_id
+                self.consecutive_moderator_turns = 0
+                
+        return next_speaker
     
     async def request_to_speak(self, agent_id: str, reason: str) -> None:
         """
@@ -192,6 +201,12 @@ class Orchestrator:
         self.current_speaker = None
         self.state.set_current_speaker(None)
         logger.info(f"Agent {agent_id} released speaking token")
+        
+        # Occasionally change topics to keep the conversation fresh
+        if random.random() < 0.15:  # 15% chance
+            new_topic = self._get_next_topic()
+            self.state.update_topic(new_topic)
+            logger.info(f"Changing topic to: {new_topic}")
     
     def get_speaking_context(self) -> Dict:
         """
@@ -204,8 +219,22 @@ class Orchestrator:
             "event_type": self.state.current_event_type,
             "topic": self.state.current_topic,
             "description": self.state.current_event_description,
-            "allow_interruptions": self.allow_interruptions
+            "allow_interruptions": self.allow_interruptions,
+            "should_pose_questions": self.should_pose_questions,
+            "agent_names": self._get_agent_names()
         }
+    
+    def _get_agent_names(self) -> Dict[str, str]:
+        """
+        Get a mapping of agent IDs to names for addressing other agents.
+        
+        Returns:
+            Dictionary mapping agent IDs to names
+        """
+        names = {}
+        for agent_id, config in self.agents_config.items():
+            names[agent_id] = config.get("name", agent_id)
+        return names
     
     async def add_transcript(self, agent_id: str, speaker_name: str, text: str) -> None:
         """
@@ -267,10 +296,20 @@ class Orchestrator:
             self.state.update_topic(new_topic)
             logger.info(f"New topic: {new_topic}")
         
-        # Set interruption policy based on event type
+        # Set interruption and question policies based on event type
         if event_type in ["open_forum", "roundtable"]:
             self.allow_interruptions = True
-            logger.info("Interruptions allowed")
-        else:
+            self.should_pose_questions = True
+            logger.info("Interruptions allowed, questions encouraged")
+        elif event_type in ["structured_discussion"]:
             self.allow_interruptions = False
-            logger.info("Interruptions not allowed")
+            self.should_pose_questions = True
+            logger.info("Interruptions not allowed, questions encouraged")
+        elif event_type in ["keynote", "presentation"]:
+            self.allow_interruptions = False
+            self.should_pose_questions = False
+            logger.info("Interruptions not allowed, questions discouraged")
+        else:
+            self.allow_interruptions = True
+            self.should_pose_questions = random.choice([True, False])
+            logger.info(f"Interruptions allowed, questions {'encouraged' if self.should_pose_questions else 'discouraged'}")
