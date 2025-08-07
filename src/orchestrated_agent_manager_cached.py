@@ -1,9 +1,10 @@
-"""Multi-agent manager with orchestrator integration for advanced conversation logic."""
+"""Multi-agent manager with orchestrator integration and response caching for faster speaker transitions."""
 
 import asyncio
 import random
 import re
 from typing import Dict, List, Optional, Tuple
+import time
 
 import numpy as np
 
@@ -17,8 +18,23 @@ from src.utils.multi_channel_player import MultiChannelPlayer
 # Set up module logger
 logger = setup_logger("orchestrated_manager")
 
+class CachedResponse:
+    """Container for cached agent responses."""
+    
+    def __init__(self, text: str, audio_data: np.ndarray, sample_rate: int, position: str, timestamp: float):
+        self.text = text
+        self.audio_data = audio_data
+        self.sample_rate = sample_rate
+        self.position = position
+        self.timestamp = timestamp
+        self.is_valid = True
+    
+    def is_expired(self, max_age: float = 30.0) -> bool:
+        """Check if the cached response is too old."""
+        return time.time() - self.timestamp > max_age
+
 class OrchestratedAgent:
-    """Individual agent with orchestrator integration."""
+    """Individual agent with orchestrator integration and caching capabilities."""
     
     def __init__(
         self,
@@ -51,7 +67,7 @@ class OrchestratedAgent:
         self.curiosity = random.uniform(0.4, 0.9)      # How likely to ask questions
         self.agreeableness = random.uniform(0.3, 0.8)  # How likely to agree vs disagree
         
-        # Determine if this is the moderator - check both agent_id and orchestrator's moderator_id
+        # Determine if this is the moderator
         self.is_moderator = (agent_id == orchestrator.moderator_id or 
                             agent_id == "moderator" or
                             self.role.lower() == "moderator")
@@ -73,18 +89,71 @@ class OrchestratedAgent:
         self.has_speaking_token = False
         self.last_spoke_time = 0
         
+        # Caching
+        self.cached_response: Optional[CachedResponse] = None
+        self.is_generating = False  # Prevent multiple simultaneous generations
+        
         logger.info(f"Initialized orchestrated agent: {self.name} ({self.role}) - "
                    f"Talkativeness: {self.talkativeness:.2f}, Curiosity: {self.curiosity:.2f}, "
                    f"Agreeableness: {self.agreeableness:.2f}")
     
-    async def request_to_speak(self, reason: str = "want to share a thought") -> None:
+    async def pre_generate_response(self, context: Dict) -> None:
         """
-        Request permission to speak from the orchestrator.
+        Pre-generate and cache a response for this agent.
         
         Args:
-            reason: Reason for wanting to speak
+            context: Speaking context
         """
-        # Only request to speak if we're talkative enough
+        if self.is_generating or (self.cached_response and not self.cached_response.is_expired()):
+            return  # Already generating or have valid cache
+        
+        self.is_generating = True
+        try:
+            logger.debug(f"Pre-generating response for {self.name}")
+            
+            # Generate response text
+            ssml_response = await self.generate_response(context)
+            plain_text = self._extract_plain_text(ssml_response)
+            
+            # Detect if this voice supports SSML
+            is_chirp_hd = "chirp3-hd" in self.voice_name.lower() or "chirp-hd" in self.voice_name.lower()
+            text_to_synthesize = plain_text if is_chirp_hd else ssml_response
+            use_ssml_flag = not is_chirp_hd
+            
+            # Synthesize speech
+            audio_data, sample_rate = await self.tts_client.synthesize_speech(
+                text=text_to_synthesize,
+                voice_name=self.voice_name,
+                speaking_rate=self.speaking_rate,
+                pitch=self.pitch,
+                sample_rate_hertz=48000,
+                use_ssml=use_ssml_flag
+            )
+            
+            # Cache the response
+            self.cached_response = CachedResponse(
+                text=plain_text,
+                audio_data=audio_data,
+                sample_rate=sample_rate,
+                position=self.position,
+                timestamp=time.time()
+            )
+            
+            logger.debug(f"Cached response ready for {self.name}")
+            
+        except Exception as e:
+            logger.error(f"Error pre-generating response for {self.name}: {str(e)}")
+        finally:
+            self.is_generating = False
+    
+    def invalidate_cache(self) -> None:
+        """Invalidate the cached response."""
+        if self.cached_response:
+            self.cached_response.is_valid = False
+            self.cached_response = None
+    
+    async def request_to_speak(self, reason: str = "want to share a thought") -> None:
+        """Request permission to speak from the orchestrator."""
         if random.random() < self.talkativeness:
             await self.orchestrator.request_to_speak(self.agent_id, reason)
     
@@ -95,25 +164,22 @@ class OrchestratedAgent:
             self.has_speaking_token = False
             self.last_spoke_time = asyncio.get_event_loop().time()
             
+            # Invalidate our cache since context has changed
+            self.invalidate_cache()
+            
             # Sometimes request to speak again later
             if random.random() < self.talkativeness * 0.5:
-                # Schedule a future request to speak
                 delay = random.uniform(2, 5)
                 asyncio.create_task(self._delayed_speak_request(delay))
     
     async def _delayed_speak_request(self, delay: float) -> None:
-        """
-        Request to speak after a delay.
-        
-        Args:
-            delay: Delay in seconds
-        """
+        """Request to speak after a delay."""
         await asyncio.sleep(delay)
         await self.request_to_speak("follow-up comment")
     
     async def speak(self, context: Dict) -> Tuple[Optional[np.ndarray], Optional[int], Optional[str]]:
         """
-        Generate and speak a response based on the given context.
+        Generate and speak a response, using cache if available.
         
         Args:
             context: Speaking context
@@ -121,6 +187,9 @@ class OrchestratedAgent:
         Returns:
             Tuple of (audio data, sample rate, position) or (None, None, None) if error
         """
+        # Debug logging for context
+        logger.debug(f"speak method called with context type: {type(context)}, value: {context}")
+        
         if not self.has_speaking_token:
             logger.warning(f"Agent {self.name} attempted to speak without token")
             return None, None, None
@@ -128,10 +197,29 @@ class OrchestratedAgent:
         try:
             self.is_speaking = True
             
+            # Check if we have a valid cached response
+            if (self.cached_response and 
+                self.cached_response.is_valid and 
+                not self.cached_response.is_expired()):
+                
+                logger.info(f"{self.name} using cached response")
+                
+                # Add to transcript
+                await self.orchestrator.add_transcript(
+                    self.agent_id, self.name, self.cached_response.text
+                )
+                
+                # Return cached audio
+                self.is_speaking = False
+                return (self.cached_response.audio_data, 
+                       self.cached_response.sample_rate, 
+                       self.cached_response.position)
+            
+            # No cache available, generate response normally
+            logger.info(f"{self.name} generating new response")
+            
             # Generate response
             ssml_response = await self.generate_response(context)
-            
-            # Extract plain text for transcript
             plain_text = self._extract_plain_text(ssml_response)
             
             # Add to transcript
@@ -139,17 +227,10 @@ class OrchestratedAgent:
                 self.agent_id, self.name, plain_text
             )
             
-            # Detect if this voice supports SSML (Chirp HD voices don't)
+            # Detect if this voice supports SSML
             is_chirp_hd = "chirp3-hd" in self.voice_name.lower() or "chirp-hd" in self.voice_name.lower()
-            
-            # Use appropriate text format and SSML setting
             text_to_synthesize = plain_text if is_chirp_hd else ssml_response
             use_ssml_flag = not is_chirp_hd
-            
-            if is_chirp_hd:
-                logger.debug(f"Using plain text for Chirp HD voice: {self.voice_name}")
-            else:
-                logger.debug(f"Using SSML for standard voice: {self.voice_name}")
             
             # Synthesize speech
             audio_data, sample_rate = await self.tts_client.synthesize_speech(
@@ -157,11 +238,11 @@ class OrchestratedAgent:
                 voice_name=self.voice_name,
                 speaking_rate=self.speaking_rate,
                 pitch=self.pitch,
-                sample_rate_hertz=48000,  # Match the player's sample rate
+                sample_rate_hertz=48000,
                 use_ssml=use_ssml_flag
             )
             
-            # Return the audio data for playback by the manager
+            # Return the audio data
             self.is_speaking = False
             return audio_data, sample_rate, self.position
             
@@ -171,31 +252,58 @@ class OrchestratedAgent:
             return None, None, None
 
     async def generate_response(self, context: Dict) -> str:
-        """
-        Generate a response based on the context.
+        """Generate a response based on the context."""
+        # Debug logging
+        logger.debug(f"generate_response called with context type: {type(context)}, value: {context}")
         
-        Args:
-            context: Speaking context with event type, topic, etc.
-            
-        Returns:
-            SSML-formatted response
-        """
-        # Get current event type, topic, and description
-        event_type = context.get("event_type", "")
-        topic = context.get("topic", "")
-        description = context.get("description", "")
-        should_pose_questions = context.get("should_pose_questions", False)
-        agent_names = context.get("agent_names", {})
+        # Ensure context is a dictionary
+        if not isinstance(context, dict):
+            logger.error(f"Context is not a dictionary: {type(context)} = {context}")
+            # Create a proper context dictionary
+            context = {
+                "event_type": "general_discussion",
+                "topic": "general conversation",
+                "description": "General discussion",
+                "should_pose_questions": False,
+                "agent_names": {}
+            }
+        
+        # Get current event type, topic, and description with more debug logging
+        try:
+            event_type = context.get("event_type", "")
+            logger.debug(f"event_type: {event_type}")
+            topic = context.get("topic", "")
+            logger.debug(f"topic: {topic}")
+            description = context.get("description", "")
+            logger.debug(f"description: {description}")
+            should_pose_questions = context.get("should_pose_questions", False)
+            logger.debug(f"should_pose_questions: {should_pose_questions}")
+            agent_names = context.get("agent_names", {})
+            logger.debug(f"agent_names: {agent_names}")
+        except Exception as e:
+            logger.error(f"Error extracting context values: {str(e)}")
+            # Provide defaults
+            event_type = "general_discussion"
+            topic = "general conversation"
+            description = "General discussion"
+            should_pose_questions = False
+            agent_names = {}
         
         # Build system instruction
         system_instruction = self._build_system_instruction(event_type, should_pose_questions)
         
         # Get recent conversation history
         recent_transcripts = self.orchestrator.get_recent_transcripts(min(7, len(self.orchestrator.agent_ids) * 2))
-        history_text = "\n".join([
-            f"{t['speaker']}: {t['text']}" 
-            for t in recent_transcripts
-        ])
+        history_text = ""
+        try:
+            history_text = "\n".join([
+                f"{t['speaker']}: {t['text']}" 
+                for t in recent_transcripts
+                if isinstance(t, dict) and 'speaker' in t and 'text' in t
+            ])
+        except Exception as e:
+            logger.error(f"Error processing transcripts: {str(e)}, transcripts: {recent_transcripts}")
+            history_text = "No previous conversation."
         
         # Build prompt
         prompt = self._build_prompt(
@@ -249,105 +357,56 @@ class OrchestratedAgent:
             """
         elif event_type == "closing_remarks":
             base_instruction += """
-            This is the closing of the session. Summarize key points discussed and offer
-            concluding thoughts. Thank the participants.
+            This is the closing of the session. Summarize key points and thank participants.
             """
-        elif event_type == "recess":
+        elif should_pose_questions:
             base_instruction += """
-            This is a brief recess. Engage in lighter, more informal conversation.
-            You can briefly reflect on the discussion so far or mention related topics.
+            Feel free to pose thoughtful questions to encourage discussion.
             """
         
-        # Add question guidance
-        if should_pose_questions:
-            base_instruction += """
-            Consider occasionally posing thoughtful questions to other participants.
-            """
-        
-        return base_instruction
+        return base_instruction.strip()
     
     def _build_prompt(
         self, 
         event_type: str, 
         topic: str, 
-        history: str,
+        history_text: str, 
         should_pose_questions: bool,
-        agent_names: Dict[str, str]
+        agent_names: Dict
     ) -> str:
-        """Build prompt based on event type and context."""
-        # Remove own name from agent names
-        other_agents = {k: v for k, v in agent_names.items() if k != self.agent_id}
+        """Build the prompt for response generation."""
+        # agent_names is Dict[str, str] mapping agent_id -> name
+        try:
+            if isinstance(agent_names, dict):
+                # Filter out our own name and create names list
+                other_names = [name for agent_id, name in agent_names.items() if agent_id != self.agent_id]
+                names_list = ", ".join(other_names) if other_names else "other participants"
+            else:
+                logger.warning(f"agent_names is not a dict: {type(agent_names)} = {agent_names}")
+                names_list = "other participants"
+        except Exception as e:
+            logger.error(f"Error processing agent_names: {str(e)}")
+            names_list = "other participants"
         
-        prompt = f"As {self.name}, respond to the topic: {topic}\n\n"
+        prompt = f"""
+        Current Event: {event_type}
+        Discussion Topic: {topic}
+        Other Participants: {names_list}
         
-        # Add conversation history
-        if history:
-            prompt += f"Recent conversation:\n{history}\n\n"
-        else:
-            prompt += "This is the start of the conversation.\n\n"
+        Recent Conversation:
+        {history_text if history_text else "No previous conversation."}
         
-        # Add event-specific instructions
-        if event_type == "structured_discussion":
-            prompt += """
-            This is a structured discussion. Provide your expert perspective on the topic.
-            Be clear, focused, and substantive.
-            """
-        elif event_type == "open_forum":
-            prompt += """
-            This is an open forum. You can respond more freely, ask questions, or
-            challenge points made by others. Show your personality and opinions.
-            """
-        elif event_type == "presentation":
-            prompt += """
-            You are giving a brief presentation. Present your key insights on the topic
-            in a clear and engaging manner. Structure your thoughts logically.
-            """
-        elif event_type == "panel_discussion":
-            prompt += """
-            This is a panel discussion. Respond to the points raised by others and
-            add your own perspective. Be collaborative but don't hesitate to
-            respectfully disagree when appropriate.
-            """
-        elif event_type == "keynote":
-            prompt += """
-            This is a keynote presentation. Deliver an insightful, thought-provoking
-            perspective on the topic. Be eloquent and impactful.
-            """
+        Generate your response as {self.name}. Keep it natural, engaging, and in character.
+        """
         
-        # Add moderator-specific instructions for certain events
-        if self.is_moderator:
-            if event_type == "welcome" or event_type == "opening_remarks":
-                prompt += """
-                As the moderator, introduce the session and the topic. Briefly explain
-                the format of the discussion and set a positive, intellectual tone.
-                """
-            elif event_type == "closing_remarks":
-                prompt += """
-                As the moderator, summarize the key points discussed today, acknowledge
-                insights shared by others, and bring the session to a thoughtful close.
-                """
+        if should_pose_questions:
+            prompt += "\nConsider asking a thoughtful question to encourage discussion."
         
-        # Encourage questions based on personality and context
-        if should_pose_questions and random.random() < self.curiosity:
-            random_agent_name = random.choice(list(other_agents.values())) if other_agents else None
-            if random_agent_name:
-                prompt += f"\nConsider directing a question to {random_agent_name} about their perspective."
-        
-        # Determine agreement tendency based on personality
-        if history and random.random() > self.agreeableness:
-            prompt += "\nYou might respectfully disagree with some points raised by others."
-        elif history and random.random() < self.agreeableness:
-            prompt += "\nYou might build upon or agree with points raised by others."
-        
-        # Keep response concise
-        prompt += "\n\nKeep your response concise, around 3-4 sentences."
-        prompt += "\nSpeak naturally as a human would in conversation. Avoid mentioning formatting elements like 'asterisk', 'underscore', 'backticks', or other code-related terms."
-        
-        return prompt
+        return prompt.strip()
     
     def _process_response_for_ssml(self, response: str) -> str:
-        """Process LLM response to ensure proper SSML formatting."""
-        # For simplicity, just return the text as-is - we're handling SSML in the TTS module
+        """Process response to ensure proper SSML formatting."""
+        # For simplicity, just return the text as-is
         return response
     
     def _extract_plain_text(self, ssml: str) -> str:
@@ -367,9 +426,9 @@ class OrchestratedAgent:
         text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # Remove markdown links, keep text
         
         # Clean up common artifacts
-        text = re.sub(r'\basterix\b', 'asterisk', text, flags=re.IGNORECASE)  # Fix common mispronunciation
-        text = re.sub(r'\bhyphen\b', '-', text, flags=re.IGNORECASE)           # Replace "hyphen" with actual hyphen
-        text = re.sub(r'\bunderscore\b', '_', text, flags=re.IGNORECASE)       # Replace "underscore" with actual underscore
+        text = re.sub(r'\basterix\b', 'asterisk', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bhyphen\b', '-', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bunderscore\b', '_', text, flags=re.IGNORECASE)
         
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text)
@@ -378,7 +437,7 @@ class OrchestratedAgent:
 
 
 class OrchestratedAgentManager:
-    """Manager for agents with orchestrator integration."""
+    """Manager for agents with orchestrator integration and response caching."""
     
     def __init__(self):
         """Initialize the orchestrated agent manager."""
@@ -397,13 +456,18 @@ class OrchestratedAgentManager:
         # Operation state
         self.is_running = False
         self.conversation_task = None
+        self.caching_task = None
         
-        logger.info("Orchestrated agent manager initialized")
+        # Caching configuration
+        self.enable_caching = True
+        self.max_cache_ahead = 2  # Number of likely next speakers to cache
+        
+        logger.info("Orchestrated agent manager initialized with caching")
     
     async def start(self) -> None:
         """Start the manager and its components."""
         try:
-            # Start audio player - Fix: use await
+            # Start audio player
             await self.audio_player.start()
             
             # Start orchestrator
@@ -419,9 +483,12 @@ class OrchestratedAgentManager:
                     tts_client=self.tts_client
                 )
             
-            # Start conversation management task
+            # Start tasks
             self.is_running = True
             self.conversation_task = asyncio.create_task(self._manage_conversation())
+            
+            if self.enable_caching:
+                self.caching_task = asyncio.create_task(self._manage_caching())
             
             logger.info(f"Orchestrated agent manager started with {len(self.agents)} agents")
             
@@ -434,11 +501,18 @@ class OrchestratedAgentManager:
         """Stop the manager and its components."""
         self.is_running = False
         
-        # Cancel conversation task
+        # Cancel tasks
         if self.conversation_task:
             self.conversation_task.cancel()
             try:
                 await self.conversation_task
+            except asyncio.CancelledError:
+                pass
+        
+        if self.caching_task:
+            self.caching_task.cancel()
+            try:
+                await self.caching_task
             except asyncio.CancelledError:
                 pass
         
@@ -450,10 +524,62 @@ class OrchestratedAgentManager:
         
         logger.info("Orchestrated agent manager stopped")
     
-    async def _manage_conversation(self) -> None:
-        """Main conversation management loop."""
+    async def _manage_caching(self) -> None:
+        """Background task to manage response caching."""
         try:
-            consecutive_failures = 0  # Track failures to avoid infinite loops
+            while self.is_running:
+                await asyncio.sleep(1)  # Check every second
+                
+                if not self.orchestrator.current_speaker:
+                    continue
+                
+                # Get likely next speakers
+                context = self.orchestrator.get_speaking_context()
+                likely_speakers = await self._get_likely_next_speakers()
+                
+                # Pre-generate responses for likely speakers
+                cache_tasks = []
+                for agent_id in likely_speakers[:self.max_cache_ahead]:
+                    agent = self.agents.get(agent_id)
+                    if agent and not agent.is_generating:
+                        cache_tasks.append(agent.pre_generate_response(context))
+                
+                if cache_tasks:
+                    await asyncio.gather(*cache_tasks, return_exceptions=True)
+                
+        except asyncio.CancelledError:
+            logger.info("Caching management task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in caching management: {str(e)}")
+    
+    async def _get_likely_next_speakers(self) -> List[str]:
+        """Get a list of agents likely to speak next."""
+        current_speaker = self.orchestrator.current_speaker
+        
+        # Start with agents who have requested to speak
+        likely_speakers = [req["agent_id"] for req in self.orchestrator.speak_requests]
+        
+        # Add agents who haven't spoken recently
+        available_agents = [aid for aid in self.orchestrator.agent_ids if aid != current_speaker]
+        less_recent_agents = [aid for aid in available_agents if aid not in self.orchestrator.recent_speakers]
+        
+        # Combine and deduplicate
+        for agent_id in less_recent_agents:
+            if agent_id not in likely_speakers:
+                likely_speakers.append(agent_id)
+        
+        # Add remaining agents
+        for agent_id in available_agents:
+            if agent_id not in likely_speakers:
+                likely_speakers.append(agent_id)
+        
+        return likely_speakers
+    
+    async def _manage_conversation(self) -> None:
+        """Main conversation management loop with optimizations."""
+        try:
+            consecutive_failures = 0
             
             while self.is_running:
                 # Check if we have a current speaker
@@ -471,7 +597,7 @@ class OrchestratedAgentManager:
                         # Get speaking context
                         context = self.orchestrator.get_speaking_context()
                         
-                        # Have the agent speak
+                        # Have the agent speak (may use cached response)
                         logger.info(f"Agent {agent.name} is speaking...")
                         print(f"\n{agent.name} is speaking...")
                         
@@ -485,9 +611,9 @@ class OrchestratedAgentManager:
                             
                             # Release speaking token
                             await agent.release_speaking_token()
-                            consecutive_failures = 0  # Reset failure counter on success
+                            consecutive_failures = 0
                             
-                            # Randomly have other agents request to speak
+                            # Trigger random speak requests
                             await self._trigger_random_speak_requests()
                             
                             # Reduced pause between speakers for faster transitions
@@ -501,11 +627,14 @@ class OrchestratedAgentManager:
                             
                             if consecutive_failures >= 3:
                                 logger.error("Too many consecutive failures, changing topics")
-                                # Force a topic change to break out of potential loops
                                 new_topic = self.orchestrator._get_next_topic()
                                 self.orchestrator.state.update_topic(new_topic)
                                 logger.info(f"Changed topic to: {new_topic}")
                                 consecutive_failures = 0
+                                
+                                # Invalidate all caches when topic changes
+                                for agent in self.agents.values():
+                                    agent.invalidate_cache()
                     else:
                         # No valid speaker available, short wait
                         await asyncio.sleep(0.5)

@@ -1,0 +1,41 @@
+# Performance Configuration for AI Roleplay System
+
+[performance]
+# Enable response caching (pre-generate responses for likely next speakers)
+enable_response_caching = true
+
+# Number of likely next speakers to cache responses for
+max_cache_ahead = 2
+
+# Cache expiry time in seconds
+cache_expiry_seconds = 30
+
+# Pause between speakers (min, max) in seconds
+speaker_pause_min = 0.1
+speaker_pause_max = 0.3
+
+# Maximum concurrent API requests
+max_concurrent_llm_requests = 5
+
+[llm]
+# Use faster model for quicker generation (flash vs pro)
+use_fast_model = true
+
+# Reduce token limit for faster generation
+fast_max_tokens = 512
+normal_max_tokens = 2048
+
+# Retry configuration
+max_retries = 2
+retry_delay_seconds = 1
+
+[tts]
+# Consider enabling TTS caching in the future
+enable_tts_caching = false
+
+[experimental]
+# Enable parallel response generation for multiple agents
+enable_parallel_generation = true
+
+# Predictive caching based on conversation patterns
+enable_smart_caching = false
