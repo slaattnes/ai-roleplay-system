@@ -1,6 +1,7 @@
 """Orchestrator for managing the multi-agent conversation."""
 
 import asyncio
+import datetime
 import random
 from typing import Dict, List, Optional, Set
 
@@ -8,6 +9,7 @@ from src.orchestrator.scheduler import EventScheduler
 from src.orchestrator.state import ConversationState
 from src.utils.config import load_config
 from src.utils.logging import setup_logger
+from src.utils.transcript_logger import TranscriptLogger
 
 # Set up module logger
 logger = setup_logger("orchestrator")
@@ -26,6 +28,10 @@ class Orchestrator:
         
         # Event scheduler
         self.scheduler = EventScheduler(on_event=self._handle_scheduled_event)
+        
+        # Create transcript logger for orchestrator events
+        session_name = f"orchestrator_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.transcript_logger = TranscriptLogger(session_name)
         
         # Topic management
         self.topics = [
@@ -219,6 +225,8 @@ class Orchestrator:
             new_topic = self._get_next_topic()
             self.state.update_topic(new_topic)
             logger.info(f"Changing topic to: {new_topic}")
+            # Log topic change
+            self.transcript_logger.log_topic_change(new_topic)
     
     def get_speaking_context(self) -> Dict:
         """
@@ -299,6 +307,9 @@ class Orchestrator:
         
         logger.info(f"Scheduled event: {event_type} - {description}")
         
+        # Log the event to the transcript
+        self.transcript_logger.log_event(event_type, description)
+        
         # Update conversation state
         self.state.update_event(event_type, description)
         
@@ -307,6 +318,8 @@ class Orchestrator:
             new_topic = self._get_next_topic()
             self.state.update_topic(new_topic)
             logger.info(f"New topic: {new_topic}")
+            # Log topic change
+            self.transcript_logger.log_topic_change(new_topic)
         
         # Set interruption and question policies based on event type
         if event_type in ["open_forum", "roundtable"]:

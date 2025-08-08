@@ -1,6 +1,7 @@
 """Multi-agent manager with orchestrator integration for advanced conversation logic."""
 
 import asyncio
+import datetime
 import random
 import re
 from typing import Dict, List, Optional, Tuple
@@ -13,6 +14,7 @@ from src.tts.google_tts import GoogleTTSClient
 from src.utils.config import load_config
 from src.utils.logging import setup_logger
 from src.utils.multi_channel_player import MultiChannelPlayer
+from src.utils.transcript_logger import TranscriptLogger
 
 # Set up module logger
 logger = setup_logger("orchestrated_manager")
@@ -391,6 +393,10 @@ class OrchestratedAgentManager:
         self.tts_client = GoogleTTSClient()
         self.audio_player = MultiChannelPlayer()
         
+        # Create transcript logger
+        session_name = f"conversation_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.transcript_logger = TranscriptLogger(session_name)
+        
         # Agents will be created after orchestrator is started
         self.agents: Dict[str, OrchestratedAgent] = {}
         
@@ -454,6 +460,7 @@ class OrchestratedAgentManager:
         """Main conversation management loop."""
         try:
             consecutive_failures = 0  # Track failures to avoid infinite loops
+            current_topic = ""
             
             while self.is_running:
                 # Check if we have a current speaker
@@ -471,6 +478,11 @@ class OrchestratedAgentManager:
                         # Get speaking context
                         context = self.orchestrator.get_speaking_context()
                         
+                        # Check if topic changed
+                        if context["topic"] != current_topic:
+                            current_topic = context["topic"]
+                            self.transcript_logger.log_topic_change(current_topic)
+                        
                         # Have the agent speak
                         logger.info(f"Agent {agent.name} is speaking...")
                         print(f"\n{agent.name} is speaking...")
@@ -478,6 +490,17 @@ class OrchestratedAgentManager:
                         audio_data, sample_rate, position = await agent.speak(context)
                         
                         if audio_data is not None:
+                            # Get the transcript of what was said
+                            recent_transcripts = self.orchestrator.get_recent_transcripts(1)
+                            if recent_transcripts:
+                                # Log to transcript file
+                                self.transcript_logger.log_utterance(
+                                    speaker_name=agent.name,
+                                    text=recent_transcripts[0]["text"],
+                                    event_type=context["event_type"],
+                                    topic=context["topic"]
+                                )
+                            
                             # Play the audio with effects if configured
                             await self.audio_player.play_to_position(
                                 audio_data, position, sample_rate, agent.audio_effects
@@ -505,6 +528,7 @@ class OrchestratedAgentManager:
                                 new_topic = self.orchestrator._get_next_topic()
                                 self.orchestrator.state.update_topic(new_topic)
                                 logger.info(f"Changed topic to: {new_topic}")
+                                self.transcript_logger.log_topic_change(new_topic)
                                 consecutive_failures = 0
                     else:
                         # No valid speaker available, short wait

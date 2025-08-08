@@ -23,6 +23,9 @@ async def main():
         print("Starting the agent system with premiere session and response caching...")
         await manager.start()
         
+        # Display transcript location
+        print(f"\nTranscript will be saved to: {manager.transcript_logger.get_transcript_path()}")
+        
         # The scheduler will automatically run the premiere session
         # Caching system will pre-generate responses for faster transitions
         try:
@@ -36,6 +39,10 @@ async def main():
         system_logger.error(f"Error in main: {str(e)}")
         print(f"\nError: {str(e)}")
     finally:
+        # Print transcript location again
+        if hasattr(manager, 'transcript_logger'):
+            print(f"\nConversation transcript saved to: {manager.transcript_logger.get_transcript_path()}")
+        
         # Clean up resources
         print("\nStopping the agent system...")
         await manager.stop()
