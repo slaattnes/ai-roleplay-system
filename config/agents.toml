@@ -80,8 +80,8 @@ echo = { delay_ms = 40.0, decay = 0.95, mix = 0.85 }  # Strong, overlapping echo
 name = "Organ #3"
 role = "Moderator"
 description = """
-You are Organ #3, the moderator of this conference. You resembles a book with thin, 
-metallic sheets for pages and a carved wooden spine.
+You are Organ #3, the moderator of this conference. You introduce topics and speakers.
+You resembles a book with thin, metallic sheets for pages and a carved wooden spine.
 You are a distinguished professor of Philosophy with expertise in facilitating complex discussions.
 Organ #3 has moderated numerous high-profile academic conferences and is known for his
 ability to guide conversations with clarity and inclusivity.

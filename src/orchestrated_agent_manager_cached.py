@@ -5,6 +5,7 @@ import random
 import re
 from typing import Dict, List, Optional, Tuple
 import time
+import datetime
 
 import numpy as np
 
@@ -14,6 +15,7 @@ from src.tts.google_tts import GoogleTTSClient
 from src.utils.config import load_config
 from src.utils.logging import setup_logger
 from src.utils.multi_channel_player import MultiChannelPlayer
+from src.utils.transcript_logger import TranscriptLogger
 
 # Set up module logger
 logger = setup_logger("orchestrated_manager")
@@ -449,6 +451,10 @@ class OrchestratedAgentManager:
         self.llm_client = GeminiClient()
         self.tts_client = GoogleTTSClient()
         self.audio_player = MultiChannelPlayer()
+        
+        # Create transcript logger
+        session_name = f"conversation_cached_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.transcript_logger = TranscriptLogger(session_name)
         
         # Agents will be created after orchestrator is started
         self.agents: Dict[str, OrchestratedAgent] = {}
